@@ -3,8 +3,8 @@
 #include "common.h"
 #include "func.h"
 
-static Pos DecideGoal(Pos pos, int command, int dir);
-static int DecideDir(int ct);
+static Pos DecideGoal(Pos pos, int command, int dir, int speed);
+static int DecideDir(int ct, Pos pos);
 static int DecideDistance(Pos p1, Pos p2);
 static void Fire(int ct);
 static void MakeShot(int ct, int dir);
@@ -25,14 +25,21 @@ void InitSystem()
 {
 	gState = GAME_TITLE;
 
-	gGun[GUN_1SHOT].atk    = 40;
+	gGun[GUN_1SHOT].atk    = 80;
 	gGun[GUN_1SHOT].color  = 0xFF0000FF;
-	gGun[GUN_3SHOT].atk    = 20;
+	gGun[GUN_3SHOT].atk    = 50;
 	gGun[GUN_3SHOT].color  = 0xFF00FFFF;
 	gGun[GUN_BUBBLE].atk   = 1;
 	gGun[GUN_BUBBLE].color = 0x0000FF80;
 	gGun[GUN_MILK].atk     = 1;
 	gGun[GUN_MILK].color   = 0xFFFFFFFF;
+
+	gArmor[ARMOR_LIGHT].hp		= 300;
+	gArmor[ARMOR_LIGHT].speed	= 500;
+	gArmor[ARMOR_MIDDLE].hp		= 400;
+	gArmor[ARMOR_MIDDLE].speed	= 150;
+	gArmor[ARMOR_HEAVY].hp		= 10000;
+	gArmor[ARMOR_HEAVY].speed	= 50;
 }
 
 /*****************************************************************
@@ -72,13 +79,20 @@ void InitMain()
 	mState = MAIN_COMMAND;	//コマンド選択画面へ
 	cState = COMMAND_DIR;	//方向選択から選択できるように
 	CT_NUM = restplayer = MAX_CT;
+	count = 0;
+	nowcommand = 0;
+	lastcount = MAX_COUNT;
+	gspeed = 1;
+	gCommand.dir = 0;		 //上方向から選択できるように
+	gCommand.gun = C_SCOPE; //照準から選択できるように
+
 	 /* 座標, 角度の決定 */
 	for(i=0; i<CT_NUM; i++){
-		gChara[i].pos.x = i * (WIDTH - S_SIZE) / (CT_NUM - 1);
+		gChara[i].pos.x = S_SIZE + i * (WIDTH - 3 * S_SIZE) / (CT_NUM - 1);
 		gChara[i].pos.y = rand() % (HEIGHT-S_SIZE);
-		gChara[i].dir = 0;//rand() % 360;
+		gChara[i].dir = rand() % 360;
 		gChara[i].state = LIVING;
-		gChara[i].maxhp = 150;
+		gChara[i].maxhp = gArmor[gChara[i].armor].hp;
 		gChara[i].hp = gChara[i].maxhp;
 		for(j=0; j<MAX_COMMAND; j++)
 			gChara[i].command[j] = -1;
@@ -91,16 +105,11 @@ void InitMain()
 		gShot[i].state = DEAD;
 	}
 
-	count = 0;
-	nowcommand = 0;
-	lastcount = MAX_COUNT;
-	gspeed = 1;
-	gCommand.dir = 0;		 //上方向から選択できるように
-	gCommand.gun = C_SCOPE; //照準から選択できるように
 
 	//COMはとりあえずランダムにコマンドと銃を決定
 	for(i=1; i<CT_NUM; i++){
-		gChara[i].gun = rand() % MAX_GUN;
+		gChara[i].gun	= GUN_MILK;//rand() % MAX_GUN;
+		gChara[i].armor = ARMOR_MIDDLE;
 		for(j=0; j<MAX_COMMAND; j++){
 			///*
 			if(j % 2 == 0)
@@ -108,7 +117,7 @@ void InitMain()
 			else
 				gChara[i].command[j] = C_FIRE;
 			//*/
-			//gChara[i].command[j] = rand() % 10;
+			gChara[i].command[j] = rand() % 10;
 		}
 	}
 }
@@ -133,11 +142,11 @@ void UseCommand()
 				switch(gChara[i].command[nowcommand]){
 				case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7: //8方位移動
 					gChara[i].startpos = gChara[i].pos;
-					gChara[i].goalpos =  DecideGoal(gChara[i].pos, gChara[i].command[nowcommand], gChara[i].dir);
+					gChara[i].goalpos =  DecideGoal(gChara[i].pos, gChara[i].command[nowcommand], gChara[i].dir, gArmor[gChara[i].armor].speed);
 					break;
 				case C_SCOPE: //照準
 					gChara[i].startdir = (gChara[i].dir % 360);
-					gChara[i].goaldir = DecideDir(i) % 360;
+					gChara[i].goaldir = DecideDir(i, gChara[i].pos);
 					break;
 				case C_FIRE: //発射
 					Fire(i);
@@ -147,6 +156,7 @@ void UseCommand()
 				}
 		}
 	}
+	/* カウント中 */
 	else if(count <= lastcount){
 		for(i=0; i<CT_NUM; i++){
 			if(gChara[i].state == LIVING)
@@ -168,8 +178,8 @@ void UseCommand()
 				}
 		}
 	}
-
-	if(count == lastcount){ //カウント終了後のリセット
+	/* カウント終了後のリセット */
+	if(count == lastcount){
 		count = -1;
 		lastcount = MAX_COUNT / gspeed;
 		nowcommand++;
@@ -183,38 +193,38 @@ void UseCommand()
 /*****************************************************************
 関数名 : DecideGoal
 機能	: キャラクターが移動する際の目的地の座標を求める
-引数	: pos : 移動前の座標  command : 8方位の移動方向  dir:キャラクターの角度
+引数	: pos : 移動前の座標  command : 移動コマンド(8方位)  dir:角度  speed : 速さ
 出力	: 目的地の座標
 *****************************************************************/
-Pos DecideGoal(Pos pos, int command, int dir)
+Pos DecideGoal(Pos pos, int command, int dir, int speed)
 {
 	Pos goalpos = {0, 0};
-	goalpos.x = pos.x + 150 * sin((dir + command * 45) * M_PI /180);
-	goalpos.y = pos.y - 150 * cos((dir + command * 45) * M_PI /180);
+	goalpos.x = pos.x + speed * sin((dir + command * 45) * M_PI /180);
+	goalpos.y = pos.y - speed * cos((dir + command * 45) * M_PI /180);
 	return goalpos;
 }
 
 /*****************************************************************
 関数名 : DecideDir
 機能	: 変更後の角度の決定
-引数	: ct : 角度を変更するキャラクターの番号
+引数	: ct : 角度を変更するキャラクターの番号  pos : 角度を変更するキャラクターの座標
 出力	: 変更後の角度
 *****************************************************************/
-int DecideDir(int ct)
+int DecideDir(int ct, Pos pos)
 {
 	/* 2点間の距離が最も近いキャラクターを決め、それとの角度を求める */
 	int i, d[CT_NUM], minid = ct, goaldir = 0;
 	for(i=0; i<CT_NUM; i++){
-		d[i] = DecideDistance(gChara[ct].pos, gChara[i].pos);
-		d[minid] = DecideDistance(gChara[ct].pos, gChara[minid].pos);
-		if(((d[minid] > d[i] && d[i] != 0) || d[minid] == 0) && gChara[i].state == LIVING){
+		d[i] = DecideDistance(pos, gChara[i].pos);
+		d[minid] = DecideDistance(pos, gChara[minid].pos);
+		if(((d[minid] >= d[i] && i != ct) || minid == ct) && gChara[i].state == LIVING){
 			minid = i;
 		}
 	}
-	int dx = gChara[minid].pos.x - gChara[ct].pos.x; //距離の差
-	int dy = gChara[minid].pos.y - gChara[ct].pos.y;
+	int dx = gChara[minid].pos.x - pos.x; //距離の差
+	int dy = gChara[minid].pos.y - pos.y;
 	goaldir = (atan2(dy, dx) * 180 / M_PI + 450);
-	return goaldir;
+	return goaldir % 360;
 }
 
 /*****************************************************************
@@ -238,7 +248,7 @@ int DecideDistance(Pos p1, Pos p2)
 *****************************************************************/
 void Fire(int ct)
 {
-	//int i,j;
+	int i,j;
 	switch(gChara[ct].gun){
 	case GUN_1SHOT:
 		MakeShot(ct, gChara[ct].dir);
@@ -252,18 +262,24 @@ void Fire(int ct)
 		MakeShot(ct, gChara[ct].dir + rand() % 21 - 15); //2n + 1 - n
 		break;
 	case GUN_MILK:
-		MakeShot(ct, gChara[ct].dir + 10 * sin((double)count / (lastcount/2) * M_PI));
-		/*
-		j=12;
+		//MakeShot(ct, gChara[ct].dir + 10 * sin((double)count / (lastcount/2) * M_PI));
+		///*
+		j=6;
 		for(i=0; i<j; i++)
 			MakeShot(ct, count * 9 + i * 360/j);
-		*/
+		//*/
 		break;
 	default:
 		break;
 	}
 }
 
+/*****************************************************************
+関数名 : MakeShot
+機能	: 玉の作成
+引数	: ct : 発射したキャラクターの番号　dir :
+出力	: なし
+*****************************************************************/
 void MakeShot(int ct, int dir)
 {
 	int i;
@@ -311,8 +327,8 @@ void MoveShot()
 	for(i=0; i<MAX_COUNT/lastcount; i++)
 		for(j=0; j<MAX_SHOT; j++)
 			if(gShot[j].state == LIVING){
-				gShot[j].pos.x = gShot[j].pos.x + 10 * 50 * MAX_COUNT / pow(lastcount, 2) * sin(gShot[j].dir * M_PI /180);
-				gShot[j].pos.y = gShot[j].pos.y - 10 * 50 * MAX_COUNT / pow(lastcount, 2) * cos(gShot[j].dir * M_PI /180);
+				gShot[j].pos.x = gShot[j].pos.x + 10 * 60 * MAX_COUNT / pow(lastcount, 2) * sin(gShot[j].dir * M_PI /180);
+				gShot[j].pos.y = gShot[j].pos.y - 10 * 60 * MAX_COUNT / pow(lastcount, 2) * cos(gShot[j].dir * M_PI /180);
 				newpos.x = gShot[j].pos.x;
 				newpos.y = gShot[j].pos.y;
 
@@ -324,7 +340,7 @@ void MoveShot()
 				for(k=0; k<CT_NUM; k++){
 					if(k != gShot[j].id && gChara[k].state == LIVING && gShot[j].state == LIVING &&
 							newpos.x >= gChara[k].pos.x && newpos.x <= gChara[k].pos.x + S_SIZE &&
-							newpos.y >= gChara[k].pos.y && newpos.y <= gChara[k].pos.y + S_SIZE){
+							newpos.y >= gChara[k].pos.y && newpos.y <= gChara[k].pos.y + S_SIZE){ //キャラの当たり判定
 						gShot[j].state = DEAD;
 						gChara[k].hp -= gGun[gChara[gShot[j].id].gun].atk;
 						if( gChara[k].hp <= 0 ){
@@ -337,6 +353,7 @@ void MoveShot()
 						}
 					}
 				}
+
 			}
 }
 
@@ -348,7 +365,7 @@ void MoveShot()
 *****************************************************************/
 int MoveDir(int startdir, int goaldir)
 {
-	return startdir + (count * (goaldir-startdir) / (lastcount/2)); //(MAXCOUNT / n)でn倍速く回転
+	return (startdir + (count * (goaldir-startdir) / (lastcount/2))) % 360; //(lastcount / n)でn倍速く回転
 }
 
 void CheckWinner()

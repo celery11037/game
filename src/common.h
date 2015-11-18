@@ -25,10 +25,11 @@
 #define C_SCOPE 8	 /* 照準 */
 #define C_FIRE  9	 /* 発射 */
 
-#define MAX_CT 4				/* キャラクターの最大数 */
+#define MAX_CT 4			/* キャラクターの最大数 */
 #define MAX_COMMAND 4			/* コマンドの最大格納数 */
 #define MAX_SHOT MAX_CT * 300
 #define MAX_COUNT 60			/* 最大カウント、減らすほど速度up */
+#define MAX_SPEED 4			/* 最大再生スピード倍率 */
 int lastcount;
 int gspeed;						/* ゲームスピード */
 
@@ -42,7 +43,8 @@ typedef enum{
 
 /* 編集モードの状態 */
 typedef enum{
-    EDIT_GUN /* 武器選択 */
+    EDIT_GUN   = 0,	/* 武器選択 */
+	EDIT_ARMOR = 1	/* 防具選択 */
 }EditState;
 
 /* メインモードの状態 */
@@ -54,17 +56,24 @@ typedef enum{
 
 /*コマンドの選択タブ */
 typedef enum{
-    COMMAND_DIR,	/* 方向選択 */
-    COMMAND_SHOT	/* 照準or発射 */
+    COMMAND_DIR	 = 0,	/* 方向選択 */
+    COMMAND_SHOT = 1	/* 照準or発射 */
 }CommandState;
 
-/* 武器の種類 */
+/* 武器・防具の種類 */
 enum{
 	GUN_1SHOT  = 0, /* 1ショット */
 	GUN_3SHOT  = 1, /* 3ショット */
 	GUN_BUBBLE = 2, /* バブル */
 	GUN_MILK   = 3, /* ミルクの科学 */
-	MAX_GUN    = 4
+	MAX_GUN    = 4,
+
+	ARMOR_LIGHT		= 0, /* 軽 */
+	ARMOR_MIDDLE	= 1, /* 中 */
+	ARMOR_HEAVY		= 2, /* 重 */
+	MAX_ARMOR		= 3,
+
+	MAX_EDIT		= 2
 };
 
 /* 武器の情報 */
@@ -72,6 +81,12 @@ typedef struct{
 	int atk;	/* 攻撃力 */
 	int color;	/* 玉の色(16進数) */
 }GunInfo;
+
+/* 防具の情報 */
+typedef struct{
+	int hp;		/* 耐久力 */
+	int speed;	/* 速さ */
+}ArmorInfo;
 
 /* キャラクターの状態 */
 typedef enum{
@@ -98,6 +113,7 @@ typedef struct{
 	int maxhp;					/* 最大HP */
 	int hp;						/* 現在HP */
 	int gun;					/* 装備中の武器 */
+	int armor;					/* 装備中の防具 */
 } CharaInfo;
 
 /* 玉の情報 */
@@ -118,13 +134,13 @@ typedef struct{
 int CT_NUM;		 /* 参加人数 */
 int count;		 /* 移動処理のためのカウント */
 int nowcommand;	 /* 現在適用されているコマンド */
-//#define lastcount 80   /* 最大カウント、40がデフォで減らすほど速度up */
 int winner;		 /* 勝者 */
 GameState gState;
 EditState eState;
 MainState mState;
 CommandState cState;
 GunInfo gGun[MAX_GUN];
+ArmorInfo gArmor[MAX_ARMOR];
 ShotInfo gShot[MAX_SHOT];
 CharaInfo gChara[MAX_CT];
 CommandInfo gCommand;

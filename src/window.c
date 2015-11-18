@@ -14,6 +14,7 @@ static char ResultImgFile[2][16] = {"img/win.png", "img/lose.png"};
 static char ShipImgFile[4][16]  =
 	{"img/ship01.png", "img/ship02.png", "img/ship03.png", "img/ship04.png"};
 static char GunImgFile[] = "img/gun.png";
+static char ArmorImgFile[] = "img/armor.png";
 static char CommandImgFile[]    = "img/command01.png";
 static char miniCommandImgFile[]    = "img/command02.png";
 
@@ -22,6 +23,7 @@ static SDL_Surface *TitleWindow;
 static SDL_Surface *ResultWindow[2];
 static SDL_Surface *ShipWindow[MAX_CT];
 static SDL_Surface *GunWindow;
+static SDL_Surface *ArmorWindow;
 static SDL_Surface *CommandWindow;
 static SDL_Surface *miniCommandWindow;
 static SDL_Joystick *joystick; //ジョイスティックを特定・利用するための構造体
@@ -77,10 +79,16 @@ int InitWindow()
     }
 
     GunWindow = IMG_Load(GunImgFile);
-        if(GunWindow == NULL){
-            printf("failed to open gun image.");
-            return -1;
-        }
+    	if(GunWindow == NULL){
+    		printf("failed to open gun image.");
+    		return -1;
+    	}
+
+    ArmorWindow = IMG_Load(ArmorImgFile);
+    	if(ArmorWindow == NULL){
+    		printf("failed to open armor image.");
+    	    return -1;
+    	}
 
 	CommandWindow = IMG_Load(CommandImgFile);
     if(CommandWindow == NULL){
@@ -142,10 +150,17 @@ void DrawTitle()
 *****************************************************************/
 void DrawEdit()
 {
-	Rect rect = {{gChara[0].gun*100, 0, 100, 100}, {WIDTH/2-100/2, HEIGHT/2-100/2}}; //とりあえず100*100
+	Rect rect = {{0, 0, 100, 100}, {WIDTH/2-100/2, HEIGHT/4}}; //とりあえず100*100
 	/* 背景を白にする */
 	SDL_FillRect(gMainWindow,NULL,0x808080);
+	rect.src.x = gChara[0].gun*100;
 	SDL_BlitSurface(GunWindow, &(rect.src), gMainWindow, &(rect.dst));
+	rect.src.x = gChara[0].armor*100;
+	rect.dst.y = 5 * HEIGHT /8;
+	SDL_BlitSurface(ArmorWindow, &(rect.src), gMainWindow, &(rect.dst));
+
+	/*選択中でない装備タブを灰色に*/
+	boxColor(gMainWindow, WIDTH/2-100/2, HEIGHT*(5-eState*3)/8, WIDTH/2-100/2+100, HEIGHT*(5-eState*3)/8+100, 0x00000040);
 	SDL_Flip(gMainWindow);
 }
 
@@ -183,8 +198,8 @@ void DrawShip()
 
 	for(i=0; i<CT_NUM; i++){
 		if(gChara[i].state == LIVING){
-			rect.src.x = (((gChara[i].dir % 180) % 45) / 5 * S_SIZE);
-			rect.src.y = ((gChara[i].dir % 180) / 45) * S_SIZE;
+			rect.src.x = (((gChara[i].dir % 360) % 45) / 5 * S_SIZE);
+			rect.src.y = ((gChara[i].dir % 360) / 45) * S_SIZE;
 			rect.src.w = rect.src.h = S_SIZE;
 			rect.dst.x = gChara[i].pos.x;
 			rect.dst.y = gChara[i].pos.y;
@@ -204,7 +219,7 @@ void DrawShip()
 
 	// 1Pの区別用
 	if(gChara[0].state == LIVING)
-		filledCircleColor(gMainWindow, gChara[0].pos.x+S_SIZE/2, gChara[0].pos.y+S_SIZE/2, 10, 0xFFFFFFF); //自分を写す
+		filledCircleColor(gMainWindow, gChara[0].pos.x+S_SIZE/2, gChara[0].pos.y+S_SIZE/2, 5, 0xFFFFFFF); //自分を写す
 }
 
 /*****************************************************************
@@ -247,10 +262,8 @@ void DrawCommand()
 	rect.dst.y = HEIGHT / 3;
 	SDL_BlitSurface(CommandWindow, &(rect.src), gMainWindow, &(rect.dst));
 
-	if(cState == COMMAND_DIR)
-		boxColor(gMainWindow, 5*WIDTH/8, HEIGHT/3, 5*WIDTH/8+C_SIZE, HEIGHT/3+C_SIZE, 0x00000040);
-	else
-		boxColor(gMainWindow, WIDTH/4, HEIGHT/3, WIDTH/4+C_SIZE, HEIGHT/3+C_SIZE, 0x00000040);
+	/*選択していないコマンドを灰色に*/
+	boxColor(gMainWindow, WIDTH*(5-cState*3)/8, HEIGHT/3, WIDTH*(5-cState*3)/8+C_SIZE, HEIGHT/3+C_SIZE, 0x00000040);
 
 	/* 選択したコマンドの描画 */
 	for(i=0; i<MAX_COMMAND; i++){
@@ -334,22 +347,46 @@ void WindowEvent(SDLKey key)
 	if(key == SDLK_ESCAPE)
 		gState = GAME_END;
 
-	if(gState == GAME_TITLE){
+	switch(gState){
+	case GAME_TITLE:
 		if(key == SDLK_x) //タイトル->エディットへ
 			gState = GAME_EDIT;
-	}
-	else if(gState == GAME_EDIT){
-		if(key == SDLK_z)
+		break;
+	case GAME_EDIT:
+		/* 編集 */
+		switch(key){
+		case SDLK_z:
 			gState = GAME_TITLE;
-		if(key == SDLK_x) //エディット->メインへ
+			break;
+		case SDLK_x: //エディット->メインへ
 			gState = GAME_MAIN;
-		else if(key == SDLK_LEFT) //コマンドの選択
-			gChara[0].gun = (gChara[0].gun + MAX_GUN - 1) % MAX_GUN;
-		else if(key == SDLK_RIGHT)
-			gChara[0].gun = (gChara[0].gun + 1) % MAX_GUN;
-	}
-	else if(gState == GAME_MAIN){
-		if(mState == MAIN_COMMAND){
+			break;
+		case SDLK_UP:
+			eState = (eState + MAX_EDIT - 1) % MAX_EDIT;
+			break;
+		case SDLK_DOWN:
+			eState = (eState + 1) % MAX_EDIT;
+			break;
+		case SDLK_LEFT: //コマンドの選択
+			if(eState == EDIT_GUN)
+				gChara[0].gun = (gChara[0].gun + MAX_GUN - 1) % MAX_GUN;
+			else if(eState == EDIT_ARMOR)
+				gChara[0].armor = (gChara[0].armor + MAX_ARMOR - 1) % MAX_ARMOR;
+			break;
+		case SDLK_RIGHT:
+			if(eState == EDIT_GUN)
+				gChara[0].gun = (gChara[0].gun + 1) % MAX_GUN;
+			else if(eState == EDIT_ARMOR)
+				gChara[0].armor = (gChara[0].armor + 1) % MAX_ARMOR;
+			break;
+		default:
+			break;
+		}
+		break;
+	case GAME_MAIN:
+		/* コマンド入力 */
+		switch(mState){
+		case MAIN_COMMAND:
 			if(cState == COMMAND_DIR){
 				if(key == SDLK_s || key == SDLK_d) //コマンドタグの切り替え
 					cState = COMMAND_SHOT;
@@ -376,48 +413,25 @@ void WindowEvent(SDLKey key)
 				gChara[0].command[nowcommand-1] = -1;
 				nowcommand--;
 			}
-			if(gChara[0].command[MAX_COMMAND - 1] != -1){ //コマンド入力後の処理
+			if(gChara[0].command[MAX_COMMAND - 1] != -1){	//コマンド入力後の処理
 				nowcommand = 0;
-				mState = MAIN_MOVE;
+				mState = MAIN_MOVE;							//動作に移行
 			}
-		}
-		else if(mState == MAIN_MOVE){
-			if(key == SDLK_s)
-				switch(gspeed){
-				case 1:
-					break;
-				case 2:
-					gspeed = 1;
-					break;
-				case 3:
-					gspeed = 2;
-					break;
-				case 4:
-					gspeed = 3;
-					break;
-				default:
-					break;
-				}
-			else if(key == SDLK_d)
-				switch(gspeed){
-				case 1:
-					gspeed = 2;
-					break;
-				case 2:
-					gspeed = 3;
-					break;
-				case 3:
-					gspeed = 4;
-					break;
-				case 4:
-					break;
-				default:
-					break;
-				}
-		}
-		else if(mState == MAIN_RESULT)
+			break;
+		case MAIN_MOVE:						//加減速
+			if(key == SDLK_s && gspeed != 1)
+				gspeed--;
+			else if(key == SDLK_d && gspeed != MAX_SPEED)
+				gspeed++;
+			break;
+		case MAIN_RESULT://結果->コマンドへ
 			if(key == SDLK_x)
 				InitMain();
+			break;
+		}
+		break;
+	default:
+		break;
 	}
 }
 
@@ -430,17 +444,7 @@ void WindowEvent(SDLKey key)
 void DestroyWindow()
 {
 	/* FreeSurfaceの必要性とは */
-	/*
-	int i;
-	SDL_FreeSurface(gMainWindow);
-	SDL_FreeSurface(TitleWindow);
-	SDL_FreeSurface(ResultWindow[0]);
-	SDL_FreeSurface(ResultWindow[1]);
-	for(i=0; i<MAX_CT; i++)
-		SDL_FreeSurface(ShipWindow[MAX_CT]);
-	SDL_FreeSurface(CommandWindow);
-	SDL_FreeSurface(miniCommandWindow);
-	*/
+	/**/
 	SDL_Quit();
 }
 
